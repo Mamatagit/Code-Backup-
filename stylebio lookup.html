@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.3/xlsx.full.min.js"></script>
+    <title>ERPNext StyleBio Lookup</title>
+    <style>
+        /* Global Styles */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7fa;
+            margin: 0;
+            padding: 0;
+            color: #333;
+        }
+
+        h3 {
+            text-align: center;
+            color: #0056b3;
+            margin-bottom: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Form Styles */
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        label {
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+            outline: none;
+            width: 100%;
+        }
+
+        input[type="text"]:focus {
+            border-color: #0056b3;
+        }
+
+        button {
+            background-color: #0056b3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #003d7a;
+        }
+
+        /* Results Table */
+        .results-section {
+            margin-top: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #f2f2f2;
+        }
+
+        th {
+            background-color: #0056b3;
+            color: white;
+            font-weight: normal;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            color: #888;
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            color: white;
+            font-size: 24px;
+            padding: 20px;
+            font-weight: bold;
+        }
+
+        .btn-container {
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    
+    <div class="container">
+        
+        <button style='float: right' id="stylebioPage" type="">Stylebio Lookup</button>
+        
+        <h3>Item Code's Tag Lookup</h3>
+        <form id="tagForm">
+            
+            <label for="tag-item">
+                Enter Tag Numbers (Comma-Separated):
+            </label>
+            <input type="text" id="tag-item" name="tag-item" placeholder="Enter Tag Numbers" required>
+            <div class="btn-container">
+                <button type="submit">Fetch Data</button>
+                <button id="exportExcel">Export to Excel</button>
+            </div>
+            <label>
+                <input type="checkbox" id="noVariantCheckbox"> No Variant
+            </label>
+            
+        </form>
+        
+        <div class="loading-overlay" id="loading">
+            <p id="loading-quote"></p>
+        </div>   
+        
+        <!-- Add the "No Variant" checkbox above the table -->
+        <div id="resultsContainer" class="results-section">
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>
+                            <input type="checkbox" id="selectAllCheckbox">
+                        </th>
+                        <th>Tag Number</th>
+                        <th>Template</th>
+                        <th>Variants</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Results will appear here -->
+                </tbody>
+            </table>
+        </div>
+        
+    </div>
+
+    <script>
+        const quotes = [
+            "💡 Great things take time, stay patient!",
+            "🚀 Your search is in progress, sit back and relax!",
+            "🔍 Every search brings new possibilities!",
+            "✨ Good things come to those who wait!",
+            "🎯 Accuracy takes time, stay tuned!",
+            "📊 Fetching insights... Almost there!"
+        ];
+        
+        const stylebioPageButton = document.getElementById("stylebioPage");
+        stylebioPageButton.addEventListener("click", stylebioPage);
+        
+        function stylebioPage() {
+            window.location.href = '/stylebio-lookup';
+        }
+        
+        document.getElementById("tagForm").addEventListener("submit", function(event) {
+            event.preventDefault();
+            
+            let tagValue = document.getElementById("tag-item").value;
+            let tagList = tagValue.split(',').map(s => s.trim()).filter(Boolean);
+            
+            if (tagList.length === 0) return;
+            
+            let randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+            document.getElementById("loading-quote").innerText = randomQuote;
+            document.getElementById("loading").style.display = "flex";
+            
+            document.querySelector("#resultsTable tbody").innerHTML = "";
+            
+            fetchData(tagList);
+        });
+        
+        function fetchData(tags) {
+            frappe.call({
+                method: 'frappe.client.get_list',
+                args: {
+                    doctype: 'Item',
+                    filters: {
+                        old_tag_no: ['in', tags],
+                        is_design_code: 1,
+                        item_group: ['not like', 'Design DNU']
+                    },
+                    fields: ['variant_of', 'old_tag_no', 'item_code'],
+                    order_by: 'item_code asc',
+                    limit_page_length: 100
+                },
+                callback: function(response) {
+                    var itemData = response.message || [];
+                    let groupedData = groupItems(itemData);
+                    displayResults(tags, groupedData);
+                }
+            });
+        }
+        
+        function groupItems(items) {
+            let grouped = {};
+            
+            items.forEach(item => {
+                let key = item.old_tag_no; // Group by Tag Number
+                
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        templates: new Set(), // Using Set to avoid duplicates
+                        variants: new Set()
+                    };
+                }
+                
+                // Add template and variants
+                grouped[key].templates.add(item.variant_of || "No Template");
+                grouped[key].variants.add(item.item_code || "No Item Codes");
+            });
+            
+            return grouped;
+        }
+
+        function displayResults(tagList, data) {
+            const resultsTableBody = document.querySelector("#resultsTable tbody");
+            document.getElementById("loading").style.display = "none";
+            resultsTableBody.innerHTML = ""; // Clear previous results
+        
+            tagList.forEach(tag => {
+                if (data[tag]) {
+                    let templates = [...data[tag].templates];
+                    let variants = [...data[tag].variants];
+        
+                    // If no template found, add "No Template"
+                    if (templates.length === 0) {
+                        templates = ["No Template"];
+                    }
+        
+                    // Loop through each template and create a row for it
+                    templates.forEach(template => {
+                        let row = resultsTableBody.insertRow();
+        
+                        // Match variants with template
+                        let matchedVariants = variants.filter(variant => variant.includes(template));
+        
+                        row.innerHTML = `
+                            <td><input type="checkbox" class="rowCheckbox"></td>
+                            <td>${tag}</td>
+                            <td>${template}</td>
+                            <td>${matchedVariants.join(', ') || "No Item Codes"}</td>
+                        `;
+                    });
+                } else {
+                    // If tag has no data, show "No Template"
+                    let row = resultsTableBody.insertRow();
+                    row.innerHTML = `
+                        <td><input type="checkbox" class="rowCheckbox"></td>
+                        <td>${tag}</td>
+                        <td>No Template</td>
+                        <td>No Item Codes</td>
+                    `;
+                }
+            });
+
+        // Attach event listener to "No Variant" checkbox
+        document.getElementById("noVariantCheckbox").addEventListener("change", function() {
+            filterNoVariants();
+        });
+        
+        document.getElementById("selectAllCheckbox").addEventListener("change", function() {
+            let isChecked = this.checked;
+            let checkboxes = document.querySelectorAll(".rowCheckbox");
+        
+            checkboxes.forEach(checkbox => {
+                if (checkbox.closest("tr").style.display !== "none") {
+                    checkbox.checked = isChecked;
+                }
+            });
+        });
+
+    }
+
+    // Function to filter "No Template" and "No Variant" rows
+    function filterNoVariants() {
+        let showNoVariantOnly = document.getElementById("noVariantCheckbox").checked;
+        let rows = document.querySelectorAll("#resultsTable tbody tr");
+    
+        rows.forEach(row => {
+            let template = row.cells[2].innerText.trim();
+            let variants = row.cells[3].innerText.trim();
+    
+            if (showNoVariantOnly) {
+                // Show only rows where template = "No Template" or variants = "No Item Codes"
+                if (template === "No Template" || variants === "No Item Codes") {
+                    row.style.display = "";
+                } else {
+                    row.style.display = "none";
+                }
+            } else {
+                // Show all rows when unchecked
+                row.style.display = "";
+            }
+        });
+    }
+    document.getElementById("exportExcel").addEventListener("click", function() {
+        let selectedRows = [];
+        let checkboxes = document.querySelectorAll(".rowCheckbox:checked");
+    
+        // Loop through selected checkboxes
+        checkboxes.forEach(checkbox => {
+            let row = checkbox.closest("tr"); // Get parent row
+            let rowData = Array.from(row.cells).slice(1).map(cell => cell.innerText); // Get row data excluding checkbox
+            selectedRows.push(rowData);
+        });
+    
+        if (selectedRows.length === 0) {
+            alert("No rows selected for export.");
+            return;
+        }
+    
+        // Add table headers
+        let headers = ["Tag Number", "Template", "Variants"];
+        selectedRows.unshift(headers);
+    
+        // Convert data to worksheet
+        let ws = XLSX.utils.aoa_to_sheet(selectedRows);
+        
+        // Create workbook and add worksheet
+        let wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Selected Rows");
+    
+        // Save the file
+        XLSX.writeFile(wb, "Exported_Data.xlsx");
+    });
+
+
+    window.onload = function() {
+        document.getElementById("loading").style.display = "none";
+    };
+    </script>
+</body>
+</html>
